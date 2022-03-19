@@ -1,9 +1,11 @@
-from importlib.resources import path
+from errno import ESTALE
 import math
 import numpy
 import arcade
 import pickle
 from collections import deque
+from operator import attrgetter
+import gc
 
 
 BACKGROUND = arcade.load_texture("resizedTopomapRoute.png")
@@ -115,6 +117,35 @@ class Utilities:
         return False
 
     @staticmethod
+    def edgeInList(edge, list):
+        for elem in list:
+            if(elem.compareEdges(edge)):
+                return True
+
+        return False
+
+    @staticmethod
+    def getAllEdges(startingPoint):
+
+        queue = deque()
+        visited = list()
+        edges = list()
+        queue.append(startingPoint)
+        
+        while queue:
+            current = queue.pop()
+
+            visited.append(current)
+
+            for n in current.neighbours:
+                if(not Utilities.isInList(n, visited)):
+                    queue.append(n)
+                    if(not Utilities.edgeInList(Edge(current, n), edges)):
+                        edges.append(Edge(current, n))
+
+        return edges
+
+    @staticmethod
     def areAllPointsReachable(startingPoint):
         queue = deque()
         visited = list()
@@ -161,8 +192,19 @@ class Utilities:
         return len(temp)
 
     @staticmethod
+    def countUniqueEdges(listA):
+        return len(listA)/2
+
+        """  temp = list()
+        for e in listA:
+            if not Utilities.edgeInList(e, temp):
+                temp.append(e) """
+        
+       
+
+    @staticmethod
     def findIndexWithHighestHeurusticValue(nodes):
-        highestValue = -1
+        """ highestValue = -1
         highestIndex = -1
 
         for i in range(nodes.size):
@@ -170,49 +212,56 @@ class Utilities:
                 highestValue = nodes[i].heurustic
                 highestIndex = i
 
-        return highestIndex
+        return highestIndex """
+        item = max(nodes,key=attrgetter('heurustic'))
+        nodes = nodes[nodes != item] 
+
+        return item, nodes
 
     @staticmethod
     def findIndexWithLowestHeurusticValue(nodes):
-        lowestValue = -1
-        lowestIndex = -1
+        item = min(nodes,key=attrgetter('heurustic'))
+        nodes = nodes[nodes != item] 
 
-        for i in range(nodes.size):
-            if(nodes[i].heurustic < lowestValue or lowestValue == -1):
-                lowestValue = nodes[i].heurustic
-                lowestIndex = i
-
-        return lowestIndex
+        return item, nodes
 
     @staticmethod
-    def braedth_best_search(startingPoint, points):
+    def braedth_best_search(startingPoint, edges, points, maxAllowedCost):
         queue = deque()
-        bestPath = None
-        bestCost = 9999999999
+        bestPath = list()
+        bestCost = maxAllowedCost
         counter = 0
-        couningHashMap = {}
-        for p in points:
-            couningHashMap[p.hashPoint()] = 0
+        countingHashMap = {}
+        """  for p in points:
+           countingHashMap[p.hashPoint()] = 0 """
+        for e in edges:
+            countingHashMap[e.hashEdge()] = 0
+            countingHashMap[e.hashCounterEdge()] = 0
 
-        root = Node(startingPoint, list(), 0.0000001, couningHashMap)
-        nodes = numpy.array([])
-        nodes = numpy.append(nodes, root)
+        root = Node(startingPoint, list(), 0.0000001, countingHashMap, set())
+        #nodes = numpy.array([])
+        #nodes = numpy.append(nodes, root)
+        queue.append(root)
 
-        test = list()
 
-        while nodes.size != 0:
-            current = nodes[Utilities.findIndexWithLowestHeurusticValue(nodes)]
-            nodes = numpy.delete(nodes, Utilities.findIndexWithLowestHeurusticValue(nodes))
-            test.append(current.point)
+        while queue:
+            #current, nodes = Utilities.findIndexWithHighestHeurusticValue(nodes)
+            #current = nodes[index]
+            #nodes = numpy.delete(nodes, index)
+            current = queue.popleft()
+            if(current.cost > bestCost):
+                del current
+                continue
 
-            
-            if(counter % 1000 == 0):
-                print(counter)
+            if(counter % 100000 == 0):
+                print("Queue Lenght = ", len(queue))
+                print("Iterations = ", counter)
+                gc.collect()
 
             counter += 1
 
-            if(Utilities.countUniqueElements(current.path) == len(points)):
-                return current.path
+            if(Utilities.countUniqueEdges(current.visitedEdges) == len(edges)):
+                #return current.path, current.cost
                 if(current.cost < bestCost):
                     bestCost = current.cost
                     bestPath = current.path
@@ -221,15 +270,116 @@ class Utilities:
             else:
                 for n in current.point.neighbours:
 
-                    if(current.countingHashMap[n.hashPoint()] > len(n.neighbours) + 1 or (len(current.path) > 2 and current.path[-2] == n and len(current.point.neighbours) != 1)):
+                    tempEdge = Edge(current.point, n)
+                    #if(current.countingHashMap[n.hashPoint()] > len(n.neighbours) + 2)  or (len(current.path) > 2 and current.path[-2] == n and len(current.point.neighbours) != 1):
+                    if(current.countingHashMap[tempEdge.hashEdge()] > 1  or (len(current.path) > 2 and current.path[-2] == n and len(current.point.neighbours) != 1)):   
                         continue
 
-                    newNode = Node(n, current.path, (current.cost + Utilities.distance(current.point.x, current.point.y, n.x, n.y)), current.countingHashMap)
+                    
+                    tempVisitedEdges = current.visitedEdges.copy()
+                    tempVisitedEdges.add(tempEdge.hashEdge())
+                    tempVisitedEdges.add(tempEdge.hashCounterEdge())
+
+                    tempCountingHashMap = current.countingHashMap.copy()
+                    tempCountingHashMap[tempEdge.hashEdge()] += 1
+                    tempCountingHashMap[tempEdge.hashCounterEdge()] += 1
+                    newNode = Node(n, current.path, (current.cost + Utilities.distance(current.point.x, current.point.y, n.x, n.y)), tempCountingHashMap, tempVisitedEdges)
 
                     if(newNode.cost < bestCost):
-                        nodes = numpy.append(nodes, newNode)
+                        #nodes = numpy.append(nodes, newNode)
+                        queue.append(newNode)
 
-        return bestPath
+            del current
+
+        if(len(bestPath) == 0):
+            return bestPath, -1
+        else:
+            return bestPath, bestCost 
+
+
+    @staticmethod
+    def AStar(startingPoint, edges, points, maxAllowedCost):
+        queue = deque()
+        bestPath = list()
+        bestCost = maxAllowedCost
+        counter = 0
+        countingHashMap = {}
+        """  for p in points:
+           countingHashMap[p.hashPoint()] = 0 """
+        for e in edges:
+            countingHashMap[e.hashEdge()] = 0
+            countingHashMap[e.hashCounterEdge()] = 0
+
+        root = Node(startingPoint, list(), 0.0000001, countingHashMap, set())
+        nodes = list()
+        nodes.append(root)
+
+
+        while len(nodes) != 0:
+            #current, nodes = Utilities.findIndexWithHighestHeurusticValue(nodes)
+            
+            if(len(nodes) < 1000):
+                item = max(nodes,key=attrgetter('heurustic'))
+                index = nodes.index(item)
+            else:  
+                item = max(nodes[0:1001],key=attrgetter('heurustic'))
+                index = nodes[0:1001].index(item)
+            
+            current = nodes.pop(index)
+
+            #current = nodes[0]
+            #nodes.pop(0)
+
+            if(current.cost > bestCost):
+                del current
+                continue
+
+            if(counter % 1000 == 0):
+                nodes.sort(key=attrgetter('heurustic'))
+                #print("List size= ", len(nodes))
+                #print("Iterations = ", counter)
+                print(current.heurustic)
+                gc.collect()
+
+            counter += 1
+
+            if(Utilities.countUniqueEdges(current.visitedEdges) == len(edges)):
+                return current.path, current.cost
+                if(current.cost < bestCost):
+                    bestCost = current.cost
+                    bestPath = current.path
+
+            
+            else:
+                for n in current.point.neighbours:
+
+                    tempEdge = Edge(current.point, n)
+                    #if(current.countingHashMap[n.hashPoint()] > len(n.neighbours) + 2)  or (len(current.path) > 2 and current.path[-2] == n and len(current.point.neighbours) != 1):
+                    if(current.countingHashMap[tempEdge.hashEdge()] > 1  or (len(current.path) > 2 and current.path[-2] == n and len(current.point.neighbours) != 1)):   
+                        continue
+
+                    
+                    tempVisitedEdges = current.visitedEdges.copy()
+                    tempVisitedEdges.add(tempEdge.hashEdge())
+                    tempVisitedEdges.add(tempEdge.hashCounterEdge())
+
+                    tempCountingHashMap = current.countingHashMap.copy()
+                    tempCountingHashMap[tempEdge.hashEdge()] += 1
+                    tempCountingHashMap[tempEdge.hashCounterEdge()] += 1
+                    newNode = Node(n, current.path, (current.cost + Utilities.distance(current.point.x, current.point.y, n.x, n.y)), tempCountingHashMap, tempVisitedEdges)
+
+                    if(newNode.cost < bestCost):
+                        if(len(nodes) > 1000 and newNode.heurustic < nodes[1000].heurustic):
+                            nodes.insert(0, newNode)
+                        else:
+                            nodes.append(newNode)
+
+            del current
+
+        if(len(bestPath) == 0):
+            return bestPath, -1
+        else:
+            return bestPath, bestCost 
 
 
 
@@ -255,15 +405,30 @@ class Point:
         return hash((self.x, self.y))
 
 class Node:
-    def __init__(self, p, path, c, hm):
+    def __init__(self, p, path, c, hm, ve):
         self.point = p
         self.path = path.copy()
         self.path.append(self.point)
+        self.visitedEdges = ve
         self.cost = c 
-        self.countingHashMap = hm.copy()
-        self.countingHashMap[self.point.hashPoint()] += 1
-        #self.heurustic = Utilities.countUniqueElements(self.path)/self.cost
-        self.heurustic = self.cost
+        self.countingHashMap = hm
+        #self.countingHashMap[self.point.hashPoint()] += 1
+        self.heurustic = Utilities.countUniqueElements(self.path)/self.cost
+        #self.heurustic = Utilities.countUniqueEdges(self.visitedEdges)
 
         pass
+
+class Edge:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+    
+    def compareEdges(self, edge):
+        return (self.a.x == edge.a.x and self.a.y == edge.a.y and self.b.x == edge.b.x and self.b.y == edge.b.y) or (self.b.x == edge.a.x and self.b.y == edge.a.y and self.a.x == edge.b.x and self.a.y == edge.b.y)
+
+    def hashEdge(self):
+        return hash((self.a.x, self.a.y, self.b.x, self.b.y))
+
+    def hashCounterEdge(self):
+        return hash((self.b.x, self.b.y, self.a.x, self.a.y))
 

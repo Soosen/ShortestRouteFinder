@@ -1,4 +1,5 @@
 from cgi import test
+from logging.config import listen
 from re import template
 import arcade
 import sys
@@ -9,6 +10,7 @@ import json
 import numpy
 from utilities import Utilities
 from utilities import Point
+from utilities import Edge
 import pickle
 
 #BACKGROUND = arcade.load_texture("resizedMap.png")
@@ -53,7 +55,11 @@ class MyProject(arcade.Window):
         self.firstPoint = None
         self.secondPoint = None
         self.counter = 0
-        self.var = list()
+        self.path = list()
+        self.visited = list()
+        self.visitedEdges = list()
+        self.edges = list()
+        self.pathEdges = list()        
 
         pass
 
@@ -64,15 +70,28 @@ class MyProject(arcade.Window):
         arcade.draw_texture_rectangle(round(BACKGROUND.size[0]/2), round(BACKGROUND.size[1]/2),BACKGROUND.size[0], BACKGROUND.size[1], BACKGROUND)
         for p in self.points:
             p.draw()
+            
 
-        if(len(self.var) != 0):
-            if(self.counter < len(self.var)):
-                arcade.draw_circle_filled(self.var[self.counter].xPix, self.var[self.counter].yPix, 15, arcade.color.PURPLE)
+        if(len(self.path) != 0):
+            if(self.counter < len(self.path)):
+                arcade.draw_circle_filled(self.path[self.counter].xPix, self.path[self.counter].yPix, 15, arcade.color.PURPLE)
+                self.visited.append(self.path[self.counter])
+
+                if(self.counter < len(self.pathEdges)):
+                    arcade.draw_line(self.pathEdges[self.counter].a.xPix, self.pathEdges[self.counter].a.yPix, self.pathEdges[self.counter].b.xPix, self.pathEdges[self.counter].b.yPix, arcade.color.ORANGE, 10)
+                    self.visitedEdges.append(self.pathEdges[self.counter])
                 self.counter += 1
-                time.sleep(0.1)
+                for v in self.visited:
+                    arcade.draw_circle_filled(v.xPix, v.yPix, 10, arcade.color.GREEN)
+
+                for e in self.visitedEdges:
+                    arcade.draw_line(e.a.xPix, e.a.yPix, e.b.xPix, e.b.yPix, arcade.color.YELLOW, 3)
+                time.sleep(0.3)
             else:
                 self.var = list()
                 self.counter = 0
+                self.visited = list()
+                self.visitedEdges = list()
 
         arcade.finish_render()
 
@@ -85,10 +104,8 @@ class MyProject(arcade.Window):
         #Key R - generate new sudoku board
         if key == arcade.key.R:
             self.points = Utilities.load_data("points.dat")
-
-            test = Utilities.areAllPointsReachable(self.points[0])
-            for t in test:
-                print(t.x, t.y)  
+            self.edges = Utilities.getAllEdges(self.points[0])
+            print(len(self.edges))
 
 
         elif key == arcade.key.S:
@@ -97,13 +114,23 @@ class MyProject(arcade.Window):
            del self.points[-1]
         elif key == arcade.key.T:
             connected = Utilities.areAllPointsReachable(self.points[0])
+            self.edges = Utilities.getAllEdges(self.points[0])
 
-            self.var = Utilities.braedth_best_search(connected[0], connected)
-
-            Utilities.save_data(self.var, "solution.dat")
-            test = Utilities.load_data("solution.dat")
-            for t in test:
-                print(t.x, t.y)
+            cost = None
+            self.path, cost = Utilities.braedth_best_search(connected[0], self.edges, connected, 32)
+            #self.path, cost = Utilities.AStar(connected[0], self.edges, connected, 32)
+            if(len(self.path) != 0 and cost != -1):
+                self.pathEdges = list()
+                for i in range(len(self.path)):
+                    if(i < len(self.path) - 1):
+                        self.pathEdges.append(Edge(self.path[i], self.path[i + 1]))
+                    
+                print("Success")
+                print(cost)
+                Utilities.save_data(self.path, "solution.dat")
+            else:
+                print("Failure")
+            
 
        
         pass
